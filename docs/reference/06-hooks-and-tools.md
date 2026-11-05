@@ -2300,6 +2300,12 @@ the first argument after the verb: a later `--help` can be part of the person's
 words that a bare double quote split, and the tool's split-value refusal keeps
 them.
 
+`aidlc engine runtime compile --help` and `aidlc engine plugin sync --help`
+also print their own usage (`-h` and `help` work in the same position). They
+exit 0 without rebuilding the runtime graph, running plugin compose hooks,
+pruning plugin files, or writing audit records. Other verbs under `runtime`
+and `plugin` do not inherit this help contract.
+
 ### Implemented Subcommands
 
 | Subcommand | Purpose | Emits |

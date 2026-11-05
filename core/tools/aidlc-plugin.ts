@@ -19,6 +19,7 @@ import { DEFAULT_SUBPROCESS_TIMEOUT_MS } from "./aidlc-runtime-budget.ts";
 import { projectInvocationTokens } from "./aidlc-command.ts";
 import {
   acquireAuditLock,
+  asksForHelp,
   committedTextBytes,
   errorMessage,
   escapeRegex,
@@ -27,6 +28,7 @@ import {
   parseStageFrontmatter,
   pausedBySelection,
   PHASES,
+  printUsageAndExit,
   releaseAuditLock,
   resolveProjectDir,
 } from "./aidlc-lib.ts";
@@ -2624,6 +2626,19 @@ function jsonEnvelope(
 }
 
 export async function main(argv: string[]): Promise<void> {
+  if (argv[0] === "sync" && asksForHelp(argv.slice(1))) {
+    printUsageAndExit(`${aidlcInvocation()} engine plugin sync [flags]
+
+Compose installed plugins into this project.
+  --plugin-root <dir>   Compose this installed plugin (otherwise use the host inventory).
+  --harness-dir <dir>   Compose into this project's named harness folder.
+  --prune-missing      Remove uninstalled plugins' contributions; requires a full host inventory.
+  --yes                Required for --prune-missing in non-interactive mode.
+  --project-dir <path> Use this project instead of the current project.
+  --json               Print the sync result as JSON.
+  --quiet              Suppress the sync result.
+`);
+  }
   const { positional, flags } = parseArgs(argv);
   const command = positional[0];
   const projectDir = resolveProjectDir(flags["project-dir"]);

@@ -3062,6 +3062,9 @@ applied again. Hosts with plugin SessionStart hooks (Claude, Codex, Cursor, and
 Kiro IDE) also self-heal on the next session start; Kiro CLI requires the
 explicit sync.
 
+To see sync's options without composing or removing anything, run
+`aidlc engine plugin sync --help` (or `-h` immediately after `sync`).
+
 `/aidlc plugin validate [path]` and
 `/aidlc plugin build <harness> [outDir]` expose the shipped standalone
 authoring tools through the top-level CLI. Validation defaults to the current

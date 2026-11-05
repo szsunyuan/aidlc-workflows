@@ -26,6 +26,7 @@ import { existsSync, readFileSync, unlinkSync, writeFileSync } from "node:fs";
 import { appendAuditEntryUnlocked } from "./aidlc-audit.ts";
 import { unitStageDiaryTexts, withoutWaveCopies } from "./aidlc-stage-diary.ts";
 import {
+  asksForHelp,
   docsRoot,
   errorMessage,
   findAllEvents,
@@ -37,6 +38,7 @@ import {
   parseCheckboxes,
   parseMemoryHeadings,
   parseStateStageSuffixes,
+  printUsageAndExit,
   readAllAuditShards,
   resolveWorkflowSelection,
   readStateFile,
@@ -56,6 +58,7 @@ import {
   worktreeRuntimeGraphPath,
   writeFileAtomic,
 } from "./aidlc-lib.ts";
+import { aidlcInvocation } from "./aidlc-runtime-paths.ts";
 
 // --- Schema (must match docs/reference/13-runtime-graph.md exactly) ---
 
@@ -1463,6 +1466,13 @@ export function main(argv: string[]): void {
     const { projectDirArg, rest: argsAfterStrip } = stripProjectDir(argv);
 
     const [cmd, ...subargs] = argsAfterStrip;
+    if (cmd === "compile" && asksForHelp(subargs)) {
+      printUsageAndExit(`${aidlcInvocation()} engine runtime compile [--project-dir <path>]
+
+Rebuild the active workflow's runtime graph from its audit and memory.
+  --project-dir <path> Use this project instead of the current project.
+`);
+    }
     if (cmd === "--help" || cmd === "-h") {
       printHelp();
       return;

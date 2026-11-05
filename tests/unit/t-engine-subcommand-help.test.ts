@@ -6,10 +6,12 @@
 // covers: function:asksForHelp, function:sensorFireUsage
 import { afterAll, describe, expect, test, setDefaultTimeout } from "bun:test";
 import { spawnSync } from "node:child_process";
+import { createHash } from "node:crypto";
+import { cpSync, existsSync, readFileSync, readdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { readAllAuditShards } from "../../dist/claude/.claude/tools/aidlc-lib.ts";
 import { ROUTES } from "../../core/tools/aidlc.ts";
-import { cleanupTestProject, createTestProject, seedStateFile } from "../harness/fixtures.ts";
+import { AIDLC_SRC, cleanupTestProject, createTestProject, seedAuditFile, seededRecordDir, seedStateFile } from "../harness/fixtures.ts";
 import { NATIVE_FIXTURE_SETUP_TIMEOUT_MS, NATIVE_STARTUP_TIMEOUT_MS, remainingOperationTimeoutMs } from "../harness/test-budget.ts";
 
 setDefaultTimeout(NATIVE_FIXTURE_SETUP_TIMEOUT_MS);
@@ -241,6 +243,90 @@ describe("sensor", () => {
     expect(run(p, "aidlc-sensor-traceability.ts", ["--help"]).stdout).toContain(
       "engine sensor-traceability --stage build-and-test",
     );
+  });
+});
+
+// Help on compile and sync used to run their mutating handlers (#3493).
+// Include directory names so a leftover lock is a change too.
+function projectDigest(root: string): string {
+  const hash = createHash("sha256");
+  const visit = (directory: string, prefix: string): void => {
+    for (const entry of readdirSync(directory, { withFileTypes: true }).sort((a, b) => a.name.localeCompare(b.name))) {
+      const path = join(directory, entry.name);
+      const rel = `${prefix}/${entry.name}`;
+      hash.update(`${entry.isDirectory() ? "dir" : "file"}:${rel}\0`);
+      if (entry.isDirectory()) visit(path, rel);
+      else hash.update(readFileSync(path));
+    }
+  };
+  visit(root, "");
+  return hash.digest("hex");
+}
+
+describe("compile and sync help is read-only", () => {
+  for (const dispatcher of [false, true]) {
+    const entry = dispatcher ? "dispatcher" : "direct tool";
+    test(`runtime compile help leaves the graph and audit unchanged (${entry})`, () => {
+      const p = project();
+      seedAuditFile(p);
+      const graph = join(seededRecordDir(p), "runtime-graph.json");
+      writeFileSync(graph, "{\"kept\":true}\n");
+      const before = projectDigest(p);
+      const tool = dispatcher ? "aidlc.ts" : "aidlc-runtime.ts";
+      const args = dispatcher ? ["engine", "runtime", "compile"] : ["compile"];
+      for (const help of ["--help", "-h", "help"]) {
+        const r = run(p, tool, [...args, help]);
+        expect(projectDigest(p), r.out).toBe(before);
+        expect(r.status, r.out).toBe(0);
+        expect(r.stdout).toContain("engine runtime compile");
+        expect(r.stdout).toContain("--project-dir <path>");
+      }
+      const compiled = run(p, tool, args);
+      expect(compiled.status, compiled.out).toBe(0);
+      expect(readFileSync(graph, "utf-8")).not.toBe("{\"kept\":true}\n");
+    });
+
+    test(`plugin sync help neither composes nor records anything (${entry})`, () => {
+      const p = project();
+      cpSync(AIDLC_SRC, join(p, ".claude"), { recursive: true });
+      const pluginRoot = join(import.meta.dir, "../../dist/plugins/test-pro/claude");
+      const stamp = join(p, ".claude/tools/data/plugin-compose-test-pro.json");
+      const tool = dispatcher ? "aidlc.ts" : "aidlc-plugin.ts";
+      const args = dispatcher ? ["engine", "plugin", "sync"] : ["sync"];
+      const options = ["--plugin-root", pluginRoot, "--harness-dir", ".claude"];
+      const before = projectDigest(p);
+      for (const help of ["--help", "-h", "help"]) {
+        const r = run(p, tool, [...args, help, ...options]);
+        expect(projectDigest(p), r.out).toBe(before);
+        expect(r.status, r.out).toBe(0);
+        expect(r.stdout).toContain("engine plugin sync");
+        for (const flag of ["--plugin-root", "--harness-dir", "--prune-missing", "--yes", "--project-dir", "--json", "--quiet"]) {
+          expect(r.stdout).toContain(flag);
+        }
+      }
+      expect(existsSync(stamp)).toBe(false);
+      const synced = run(p, tool, [...args, ...options]);
+      expect(synced.status, synced.out).toBe(0);
+      expect(existsSync(stamp)).toBe(true);
+    });
+  }
+
+  test("plugin sync help is read before plugin and harness validation", () => {
+    const p = project();
+    const before = projectDigest(p);
+    const r = run(p, "aidlc.ts", ["engine", "plugin", "sync", "--help", "--plugin-root", "missing", "--harness-dir", "missing", "--prune-missing", "--json", "--quiet"]);
+    expect(r.status, r.out).toBe(0);
+    expect(r.stdout).toContain("engine plugin sync");
+    expect(r.stdout).not.toContain("plugin sync complete");
+    expect(projectDigest(p)).toBe(before);
+  });
+
+  test("a plugin-root value named help is not a help request", () => {
+    const p = project();
+    const r = run(p, "aidlc-plugin.ts", ["sync", "--plugin-root", "help"]);
+    expect(r.status, r.out).not.toBe(0);
+    expect(r.stdout).not.toContain("engine plugin sync");
+    expect(r.out).toContain("help");
   });
 });
 
